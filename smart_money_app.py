@@ -155,24 +155,26 @@ with st.sidebar:
 
     if st.session_state.side == 'dashboard':
         st.markdown("### Tidsperiode")
-        periode_navn = st.selectbox(
+        st.selectbox(
             "Analysehorisont", list(PERIODE_VALG.keys()), index=1,
             label_visibility='collapsed',
+            key='sb_periode',
         )
-        periode_dager = PERIODE_VALG[periode_navn]
 
         st.markdown("### Sektor")
-        sektor_valg = st.selectbox(
+        st.selectbox(
             "Velg sektor", list(SEKTORER.keys()),
             format_func=lambda x: f"{x} — {SEKTORER[x][0]}",
             label_visibility='collapsed',
+            key='sb_sektor',
         )
 
         st.markdown("### VSA-chart")
-        _, tickers_sektor = SEKTORER[sektor_valg]
-        chart_ticker = st.selectbox(
+        _, tickers_sektor = SEKTORER[st.session_state.get('sb_sektor', 'XLK')]
+        st.selectbox(
             "Vis chart for", tickers_sektor[:20],
             label_visibility='collapsed',
+            key='sb_chart',
         )
 
         st.markdown("---")
@@ -1077,26 +1079,11 @@ def vis_guide():
 # =============================================================================
 
 def vis_dashboard():
-    # Disse er definert i sidebar-blokken over, men trenger defaults her
-    # dersom siden lastes uten at sidebar-widgetene er rendret ennå
-    if 'periode_navn' not in dir():
-        pass  # bruker verdiene fra sidebar-scope via Streamlit globals
-
-    # Hent sidebar-verdier trygt
+    # Les widget-verdier direkte fra eksplisitte session_state-nøkler
     periode_dager = PERIODE_VALG.get(
-        st.session_state.get('_periode', '3 måneder'), 90)
-    sektor_valg   = st.session_state.get('_sektor', 'XLK')
-    chart_ticker  = st.session_state.get('_chart', 'NVDA')
-
-    # -- Les faktiske sidebar-widgets via query av session_state keys
-    # (Streamlit setter widget-verdier i session_state automatisk)
-    for key in st.session_state:
-        if 'Analysehorisont' in str(key):
-            periode_dager = PERIODE_VALG.get(st.session_state[key], 90)
-        if 'Velg sektor' in str(key):
-            sektor_valg = st.session_state[key]
-        if 'Vis chart' in str(key):
-            chart_ticker = st.session_state[key]
+        st.session_state.get('sb_periode', '3 måneder'), 90)
+    sektor_valg  = st.session_state.get('sb_sektor', 'XLK')
+    chart_ticker = st.session_state.get('sb_chart', SEKTORER[sektor_valg][1][0])
 
     # Header
     col_t, col_d = st.columns([3, 1])
