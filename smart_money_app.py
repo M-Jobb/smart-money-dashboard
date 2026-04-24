@@ -9,7 +9,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -17,6 +16,17 @@ from scipy.signal import argrelextrema
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
+
+# =============================================================================
+# INNEBYGDE TEKNISKE INDIKATORER
+# Erstatter pandas_ta (slettet fra PyPI 2025-09-08 + inkompatibel med NumPy 2.x)
+# =============================================================================
+
+def compute_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+    """On-Balance Volume — identisk utregning som pandas_ta.obv()."""
+    sign = np.sign(close.diff())
+    result = (sign * volume).cumsum()
+    return result.rename('OBV')
 
 # =============================================================================
 # SIDE-KONFIGURASJON
@@ -88,14 +98,14 @@ st.markdown("""
 SEKTORER = {
     'XLK':  ('Teknologi',               ['NVDA','MSFT','AAPL','AVGO','AMD','CRM','ORCL','QCOM','TXN','INTC','AMAT','MU','LRCX','KLAC','ADI','MRVL','PANW','CRWD','SNPS','CDNS']),
     'XLF':  ('Finans',                  ['BRK-B','JPM','V','MA','BAC','WFC','GS','MS','BLK','SPGI','AXP','CB','CME','ICE','PGR','TRV','MET','PRU','AFL','AIG']),
-    'XLE':  ('Energi',                  ['XOM','CVX','COP','EOG','SLB','MPC','PXD','VLO','PSX','OXY','HES','DVN','BKR','FANG','HAL','APA','EQT','MRO','CTRA','OVV']),
+    'XLE':  ('Energi',                  ['XOM','CVX','COP','EOG','SLB','MPC','WMB','VLO','PSX','OXY','HES','DVN','BKR','FANG','HAL','APA','EQT','KMI','CTRA','OVV']),
     'XLV':  ('Helse',                   ['LLY','UNH','JNJ','ABBV','MRK','TMO','ABT','DHR','PFE','AMGN','MDT','ISRG','GILD','CVS','CI','HCA','ZTS','ELV','SYK','BSX']),
     'XLI':  ('Industri',                ['GE','RTX','HON','UNP','BA','DE','ETN','LMT','NOC','GD','MMM','ITW','EMR','CMI','PH','FDX','UPS','CSX','NSC','WM']),
     'XLY':  ('Forbruksdiskresjonær',    ['AMZN','TSLA','HD','MCD','NKE','SBUX','LOW','BKNG','TJX','CMG','F','GM','ABNB','DHI','LEN','NVR','PHM','MAR','HLT','YUM']),
     'XLP':  ('Forbruksstabeltre',       ['PG','COST','KO','PEP','WMT','PM','MO','MDLZ','CL','EL','STZ','KHC','GIS','HSY','K','SJM','MKC','CAG','CPB','HRL']),
     'XLU':  ('Utilities',               ['NEE','SO','DUK','AEP','SRE','EXC','XEL','PEG','ED','AWK','PPL','ES','FE','NI','CMS','CNP','LNT','OGE','PNW','WEC']),
-    'XLB':  ('Materialer',              ['LIN','APD','SHW','FCX','NEM','NUE','VMC','MLM','ALB','CE','IFF','PPG','IP','CF','MOS','FMC','SEE','PKG','WRK','BALL']),
-    'XLRE': ('Eiendom',                 ['PLD','AMT','CCI','EQIX','SPG','O','PSA','WELL','DLR','AVB','EQR','SBA','SBAC','WPC','EXR','HST','ARE','BXP','UDR','NNN']),
+    'XLB':  ('Materialer',              ['LIN','APD','SHW','FCX','NEM','NUE','VMC','MLM','ALB','CE','IFF','PPG','IP','CF','MOS','FMC','SEE','PKG','SW','BALL']),
+    'XLRE': ('Eiendom',                 ['PLD','AMT','CCI','EQIX','SPG','O','PSA','WELL','DLR','AVB','EQR','SBAC','WPC','EXR','HST','ARE','BXP','UDR','NNN','VICI']),
     'XLC':  ('Kommunikasjonstjenester', ['META','GOOGL','GOOG','NFLX','T','VZ','DIS','CMCSA','TMUS','CHTR','EA','WBD','PARA','OMC','IPG','NWSA','FOX','LYV','ZM','MTCH']),
 }
 
@@ -129,10 +139,6 @@ TEXT    = '#c9d1d9'
 
 if 'side' not in st.session_state:
     st.session_state.side = 'guide'
-
-# Spor forrige sektor for å nullstille chart-valg ved sektorbytte
-if '_prev_sektor' not in st.session_state:
-    st.session_state._prev_sektor = 'XLK'
 
 # =============================================================================
 # SIDEBAR
@@ -173,12 +179,8 @@ with st.sidebar:
             key='sb_sektor',
         )
 
-        # Nullstill chart-valg når sektoren endres
-        aktuell_sektor = st.session_state.get('sb_sektor', 'XLK')
-        if aktuell_sektor != st.session_state._prev_sektor:
-            st.session_state._prev_sektor = aktuell_sektor
-            if 'tab3_chart' in st.session_state:
-                del st.session_state['tab3_chart']
+        # Chart-valget i tab3 får sektor-spesifikk key (se vis_dashboard), så
+        # ingen manuell nullstilling nødvendig her.
 
         st.markdown("---")
         if st.button("⟳  Oppdater analyse", use_container_width=True):
@@ -199,31 +201,38 @@ with st.sidebar:
 @st.cache_data(ttl=1800, show_spinner=False)
 def hent_data(tickers: tuple, dager: int) -> pd.DataFrame:
     start = (datetime.today() - timedelta(days=dager + 10)).strftime('%Y-%m-%d')
-    raw = yf.download(list(tickers), start=start, progress=False, auto_adjust=True)
-    if isinstance(raw.columns, pd.MultiIndex):
-        return raw
-    raw.columns = pd.MultiIndex.from_product([raw.columns, tickers])
+    raw = yf.download(list(tickers), start=start, progress=False,
+                      auto_adjust=True, group_by='column')
+    if raw.empty:
+        return pd.DataFrame()
+    # Forvent MultiIndex (Close/Open/... × ticker). Hvis bare én ticker returneres
+    # som flat struktur, bygg MultiIndex manuelt.
+    if not isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = pd.MultiIndex.from_product([raw.columns, [tickers[0]]])
     return raw
 
 
 def hent_enkelt(ticker: str, dager: int) -> pd.DataFrame:
-    """Henter OHLCV for én ticker. Ingen cache."""
+    """Henter OHLCV for én ticker. Ingen cache. Robust mot MultiIndex."""
     start = (datetime.today() - timedelta(days=dager + 10)).strftime('%Y-%m-%d')
-    # progress=False, timeout for å unngå heng
     raw = yf.download(
         ticker, start=start,
         progress=False, auto_adjust=True,
     )
     if raw.empty:
         return pd.DataFrame()
-    df = pd.DataFrame({
-        'Open':   raw['Open'].squeeze(),
-        'High':   raw['High'].squeeze(),
-        'Low':    raw['Low'].squeeze(),
-        'Close':  raw['Close'].squeeze(),
-        'Volume': raw['Volume'].squeeze(),
-    }).dropna()
-    return df.tail(dager)
+
+    # yfinance returnerer nå MultiIndex også for én ticker — flatt ut
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+    # Dropp evt. duplikatkolonner
+    raw = raw.loc[:, ~raw.columns.duplicated()]
+
+    cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    if not all(c in raw.columns for c in cols):
+        return pd.DataFrame()
+
+    return raw[cols].dropna().tail(dager)
 
 # =============================================================================
 # ANALYSE-FUNKSJONER
@@ -247,7 +256,7 @@ def vpa_analyse(df):
     thrust     = int(((vol_ratio >= 1.5) & (chg >= 0.8) & (close_pct >= 0.65)).sum())
     shakeout   = int(((vol_ratio >= 2.5) & (chg < -0.5) & (close_pct >= 0.45)).sum())
 
-    obv       = ta.obv(df['Close'], df['Volume'])
+    obv       = compute_obv(df['Close'], df['Volume'])
     obv_slope = (obv.iloc[-1] - obv.iloc[-min(20, len(obv))]) if len(obv) > 5 else 0
     score     = min(100, absorpsjon*8 + thrust*10 + shakeout*6 + (15 if obv_slope > 0 else 0))
 
@@ -269,7 +278,7 @@ def wyckoff_fase_enkel(df, rs):
     kurs    = closes[-1]
     range_h = resist - support
 
-    obv       = ta.obv(df['Close'], df['Volume'])
+    obv       = compute_obv(df['Close'], df['Volume'])
     obv_trend = obv.iloc[-1] > obv.iloc[-min(20, len(obv))]
     vpa       = vpa_analyse(df)
 
@@ -331,8 +340,8 @@ def sektor_screening(periode_dager):
 def drill_down_scanner(sektor_etf, periode_dager):
     _, tickers = SEKTORER[sektor_etf]
     tickers_20 = tickers[:20]
-    alle = list(set(tickers_20 + [sektor_etf, BENCHMARK]))
-    raw  = hent_data(tuple(alle), max(periode_dager, 120) + 20)
+    alle = tuple(sorted(set(tickers_20 + [sektor_etf, BENCHMARK])))
+    raw  = hent_data(alle, max(periode_dager, 120) + 20)
     if 'Close' not in raw.columns.get_level_values(0):
         return pd.DataFrame()
 
@@ -473,7 +482,7 @@ def plot_candlestick_vsa(ticker, dager):
         elif df.loc[i,'Close'] >= df.loc[i,'Open']: vol_farger.append('rgba(63,185,80,0.26)')
         else:                           vol_farger.append('rgba(248,81,73,0.26)')
 
-    obv = ta.obv(df['Close'], df['Volume'])
+    obv = compute_obv(df['Close'], df['Volume'])
 
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
                         row_heights=[0.60, 0.22, 0.18], vertical_spacing=0.02)
@@ -533,8 +542,8 @@ def plot_candlestick_vsa(ticker, dager):
     return fig
 
 def plot_rs_tidslinje(tickers, sektor_etf, dager):
-    alle  = list(set(tickers[:5] + [sektor_etf, BENCHMARK]))
-    raw   = hent_data(tuple(alle), dager + 10)
+    alle  = tuple(sorted(set(tickers[:5] + [sektor_etf, BENCHMARK])))
+    raw   = hent_data(alle, dager + 10)
     if 'Close' not in raw.columns.get_level_values(0):
         return go.Figure()
     bench  = raw['Close'][BENCHMARK].dropna()
@@ -1196,7 +1205,7 @@ def vis_dashboard():
         chart_ticker = st.selectbox(
             "Velg aksje for VSA-analyse",
             tickers_tab3[:20],
-            key='tab3_chart',
+            key=f'tab3_chart_{sektor_valg}',
         )
 
         # Debug: vis hva som faktisk er valgt
@@ -1224,7 +1233,7 @@ def vis_dashboard():
                 elif df_vsa.loc[i,'Close'] >= df_vsa.loc[i,'Open']: vol_farger.append('rgba(63,185,80,0.26)')
                 else:                                                vol_farger.append('rgba(248,81,73,0.26)')
 
-            obv = ta.obv(df_vsa['Close'], df_vsa['Volume'])
+            obv = compute_obv(df_vsa['Close'], df_vsa['Volume'])
 
             fig_vsa = make_subplots(rows=3, cols=1, shared_xaxes=True,
                                     row_heights=[0.60,0.22,0.18], vertical_spacing=0.02)
