@@ -124,11 +124,15 @@ MUTED   = '#8b949e'
 TEXT    = '#c9d1d9'
 
 # =============================================================================
-# SESSION STATE — navigasjon
+# SESSION STATE — navigasjon + widget-tracking
 # =============================================================================
 
 if 'side' not in st.session_state:
     st.session_state.side = 'guide'
+
+# Spor forrige sektor for å nullstille chart-valg ved sektorbytte
+if '_prev_sektor' not in st.session_state:
+    st.session_state._prev_sektor = 'XLK'
 
 # =============================================================================
 # SIDEBAR
@@ -169,8 +173,16 @@ with st.sidebar:
             key='sb_sektor',
         )
 
+        # Nullstill chart-valg når sektoren endres
+        aktuell_sektor = st.session_state.get('sb_sektor', 'XLK')
+        if aktuell_sektor != st.session_state._prev_sektor:
+            st.session_state._prev_sektor = aktuell_sektor
+            # Fjern gammel chart-nøkkel så selectbox starter på index 0
+            if 'sb_chart' in st.session_state:
+                del st.session_state['sb_chart']
+
         st.markdown("### VSA-chart")
-        _, tickers_sektor = SEKTORER[st.session_state.get('sb_sektor', 'XLK')]
+        _, tickers_sektor = SEKTORER[aktuell_sektor]
         st.selectbox(
             "Vis chart for", tickers_sektor[:20],
             label_visibility='collapsed',
@@ -202,8 +214,9 @@ def hent_data(tickers: tuple, dager: int) -> pd.DataFrame:
     raw.columns = pd.MultiIndex.from_product([raw.columns, tickers])
     return raw
 
-@st.cache_data(ttl=1800, show_spinner=False)
+
 def hent_enkelt(ticker: str, dager: int) -> pd.DataFrame:
+    """Henter OHLCV for én ticker. Ingen cache — sikrer at ticker-bytte alltid gir riktig data."""
     start = (datetime.today() - timedelta(days=dager + 10)).strftime('%Y-%m-%d')
     raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
     df = pd.DataFrame({
