@@ -406,6 +406,14 @@ def plot_sektor_heatmap(df):
         font=dict(family='monospace'),
     )
     return fig
+    
+# Definer farger for mørkt tema
+DARK = "#0d1117"
+SURFACE = "#161b22"
+BORDER = "#30363d"
+TEXT = "#c9d1d9"
+TEXT_MUTED = "#8b949e"
+ACCENT = "#388bfd"
 
 def plot_rs_boble(df):
     fase_hex = {'spring':'#3fb950','markup':'#388bfd','akkumulering_B':'#a371f7',
