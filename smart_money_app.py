@@ -396,7 +396,7 @@ def plot_sektor_heatmap(df):
                     [0.5,'#374151'],[0.6,'#166534'],[0.75,'#15803d'],[1,'#14532d']],
         zmid=0, showscale=True,
         colorbar=dict(title=dict(text='RS vs SPY (%)', font=dict(color=MUTED)),
-                      tickfont=dict(color=MUTED), bgcolor=DARK),
+                      tickfont=dict(color=MUTED)),
     ))
     fig.update_layout(
         paper_bgcolor=DARK, plot_bgcolor=DARK, height=420,
@@ -431,10 +431,10 @@ def plot_rs_boble(df):
     fig.update_layout(
         paper_bgcolor=DARK, plot_bgcolor=SURFACE, height=440,
         margin=dict(l=10, r=10, t=30, b=40),
-        xaxis=dict(title='Smart Money Score', gridcolor=GRID, tickfont=dict(color=MUTED),
-                   titlefont=dict(color=MUTED)),
-        yaxis=dict(title='RS vs SPY (%)', gridcolor=GRID, tickfont=dict(color=MUTED),
-                   titlefont=dict(color=MUTED)),
+        xaxis=dict(title=dict(text='Smart Money Score', font=dict(color=MUTED)),
+                   gridcolor=GRID, tickfont=dict(color=MUTED)),
+        yaxis=dict(title=dict(text='RS vs SPY (%)', font=dict(color=MUTED)),
+                   gridcolor=GRID, tickfont=dict(color=MUTED)),
         legend=dict(bgcolor=SURFACE, bordercolor='#30363d', borderwidth=1,
                     font=dict(color=MUTED, size=11)),
         font=dict(color=TEXT),
@@ -476,10 +476,12 @@ def plot_candlestick_vsa(ticker, dager):
     for i in df.index:
         if absorpsjon_m.get(i, False):
             fig.add_annotation(x=i, y=df.loc[i,'Low']*0.993, text='▲',
-                showarrow=False, font=dict(color='#3fb950', size=10), row=1, col=1)
+                showarrow=False, font=dict(color='#3fb950', size=10),
+                xref='x', yref='y')
         elif shakeout_m.get(i, False):
             fig.add_annotation(x=i, y=df.loc[i,'High']*1.005, text='◆',
-                showarrow=False, font=dict(color='#d29922', size=9), row=1, col=1)
+                showarrow=False, font=dict(color='#d29922', size=9),
+                xref='x', yref='y')
 
     fig.add_trace(go.Bar(x=df.index, y=df['Volume'],
                          marker_color=vol_farger, name='Volum', showlegend=False),
