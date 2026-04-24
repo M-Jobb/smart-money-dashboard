@@ -177,17 +177,8 @@ with st.sidebar:
         aktuell_sektor = st.session_state.get('sb_sektor', 'XLK')
         if aktuell_sektor != st.session_state._prev_sektor:
             st.session_state._prev_sektor = aktuell_sektor
-            # Fjern gammel chart-nøkkel så selectbox starter på index 0
-            if 'sb_chart' in st.session_state:
-                del st.session_state['sb_chart']
-
-        st.markdown("### VSA-chart")
-        _, tickers_sektor = SEKTORER[aktuell_sektor]
-        st.selectbox(
-            "Vis chart for", tickers_sektor[:20],
-            label_visibility='collapsed',
-            key='sb_chart',
-        )
+            if 'tab3_chart' in st.session_state:
+                del st.session_state['tab3_chart']
 
         st.markdown("---")
         if st.button("⟳  Oppdater analyse", use_container_width=True):
@@ -1096,7 +1087,7 @@ def vis_dashboard():
     periode_dager = PERIODE_VALG.get(
         st.session_state.get('sb_periode', '3 måneder'), 90)
     sektor_valg  = st.session_state.get('sb_sektor', 'XLK')
-    chart_ticker = st.session_state.get('sb_chart', SEKTORER[sektor_valg][1][0])
+    # chart_ticker leses direkte i tab3 via eigen selectbox — ikke her
 
     # Header
     col_t, col_d = st.columns([3, 1])
@@ -1194,7 +1185,13 @@ def vis_dashboard():
                                mime='text/csv')
 
     with tab3:
-        st.markdown(f"### {chart_ticker} — Volume Spread Analysis")
+        # Selectbox direkte i fanen — garantert korrekt rekkefølge
+        _, tickers_tab3 = SEKTORER[sektor_valg]
+        chart_ticker = st.selectbox(
+            "Velg aksje for VSA-analyse",
+            tickers_tab3[:20],
+            key='tab3_chart',
+        )
         st.caption("▲ Absorpsjon (grønn) · ◆ Shakeout (gul) · OBV i bunn-panel · Scroll for zoom")
         with st.spinner(f"Laster {chart_ticker}..."):
             fig_vsa = plot_candlestick_vsa(chart_ticker, min(periode_dager, 90))
