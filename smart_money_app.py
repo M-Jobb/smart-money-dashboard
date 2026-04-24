@@ -207,9 +207,15 @@ def hent_data(tickers: tuple, dager: int) -> pd.DataFrame:
 
 
 def hent_enkelt(ticker: str, dager: int) -> pd.DataFrame:
-    """Henter OHLCV for én ticker. Ingen cache — sikrer at ticker-bytte alltid gir riktig data."""
+    """Henter OHLCV for én ticker. Ingen cache."""
     start = (datetime.today() - timedelta(days=dager + 10)).strftime('%Y-%m-%d')
-    raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+    # progress=False, timeout for å unngå heng
+    raw = yf.download(
+        ticker, start=start,
+        progress=False, auto_adjust=True,
+    )
+    if raw.empty:
+        return pd.DataFrame()
     df = pd.DataFrame({
         'Open':   raw['Open'].squeeze(),
         'High':   raw['High'].squeeze(),
@@ -1185,18 +1191,98 @@ def vis_dashboard():
                                mime='text/csv')
 
     with tab3:
-        # Selectbox direkte i fanen — garantert korrekt rekkefølge
         _, tickers_tab3 = SEKTORER[sektor_valg]
+
         chart_ticker = st.selectbox(
             "Velg aksje for VSA-analyse",
             tickers_tab3[:20],
             key='tab3_chart',
         )
-        st.caption("▲ Absorpsjon (grønn) · ◆ Shakeout (gul) · OBV i bunn-panel · Scroll for zoom")
-        with st.spinner(f"Laster {chart_ticker}..."):
-            fig_vsa = plot_candlestick_vsa(chart_ticker, min(periode_dager, 90))
-        st.plotly_chart(fig_vsa, use_container_width=True,
-                        config={'displayModeBar': True, 'scrollZoom': True})
+
+        # Debug: vis hva som faktisk er valgt
+        st.caption(f"Viser data for: **{chart_ticker}** | Sektor: {sektor_valg} | Periode: {min(periode_dager,90)}d")
+
+        # Bygg figuren direkte her — ingen funksjonskall som kan være cachet
+        df_vsa = hent_enkelt(chart_ticker, min(periode_dager, 90))
+
+        if df_vsa.empty:
+            st.warning(f"Ingen data for {chart_ticker}")
+        else:
+            vol_sma      = df_vsa['Volume'].rolling(20).mean()
+            vol_ratio    = df_vsa['Volume'] / vol_sma
+            chg          = df_vsa['Close'].pct_change() * 100
+            close_pct    = (df_vsa['Close'] - df_vsa['Low']) / (df_vsa['High'] - df_vsa['Low'] + 1e-9)
+            abs_m        = (vol_ratio >= 1.8) & (chg.abs() <= 0.8)
+            thrust_m     = (vol_ratio >= 1.5) & (chg >= 0.8) & (close_pct >= 0.65)
+            shakeout_m   = (vol_ratio >= 2.5) & (chg < -0.5) & (close_pct >= 0.45)
+
+            vol_farger = []
+            for i in df_vsa.index:
+                if abs_m.get(i, False):                              vol_farger.append('rgba(63,185,80,0.6)')
+                elif thrust_m.get(i, False):                         vol_farger.append('rgba(56,139,253,0.6)')
+                elif shakeout_m.get(i, False):                       vol_farger.append('rgba(210,153,34,0.6)')
+                elif df_vsa.loc[i,'Close'] >= df_vsa.loc[i,'Open']: vol_farger.append('rgba(63,185,80,0.26)')
+                else:                                                vol_farger.append('rgba(248,81,73,0.26)')
+
+            obv = ta.obv(df_vsa['Close'], df_vsa['Volume'])
+
+            fig_vsa = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                                    row_heights=[0.60,0.22,0.18], vertical_spacing=0.02)
+
+            fig_vsa.add_trace(go.Candlestick(
+                x=df_vsa.index, open=df_vsa['Open'], high=df_vsa['High'],
+                low=df_vsa['Low'], close=df_vsa['Close'],
+                increasing_line_color='#3fb950', decreasing_line_color='#f85149',
+                increasing_fillcolor='#3fb950', decreasing_fillcolor='#f85149',
+                name='Kurs', showlegend=False,
+            ), row=1, col=1)
+
+            for i in df_vsa.index:
+                if abs_m.get(i, False):
+                    fig_vsa.add_annotation(x=i, y=df_vsa.loc[i,'Low']*0.993, text='▲',
+                        showarrow=False, font=dict(color='#3fb950', size=10), xref='x', yref='y')
+                elif shakeout_m.get(i, False):
+                    fig_vsa.add_annotation(x=i, y=df_vsa.loc[i,'High']*1.005, text='◆',
+                        showarrow=False, font=dict(color='#d29922', size=9), xref='x', yref='y')
+
+            fig_vsa.add_trace(go.Bar(x=df_vsa.index, y=df_vsa['Volume'],
+                                     marker_color=vol_farger, showlegend=False), row=2, col=1)
+            fig_vsa.add_trace(go.Scatter(x=df_vsa.index, y=vol_sma,
+                                         line=dict(color=MUTED, width=1, dash='dot'),
+                                         showlegend=False), row=2, col=1)
+            fig_vsa.add_trace(go.Scatter(x=df_vsa.index, y=obv,
+                                         line=dict(color='#a371f7', width=1.5),
+                                         fill='tozeroy', fillcolor='rgba(163,113,247,0.08)',
+                                         showlegend=False), row=3, col=1)
+
+            for navn, farge, sym in [('Absorpsjon','#3fb950','▲'),
+                                      ('Vol-thrust','#388bfd','●'),
+                                      ('Shakeout',  '#d29922','◆')]:
+                fig_vsa.add_trace(go.Scatter(x=[None], y=[None], mode='markers',
+                                             marker=dict(color=farge, size=8),
+                                             name=f'{sym} {navn}', showlegend=True), row=1, col=1)
+
+            ax = dict(gridcolor=GRID, zeroline=False, tickfont=dict(color=MUTED, size=10))
+            fig_vsa.update_layout(
+                paper_bgcolor=DARK, plot_bgcolor=SURFACE, height=600,
+                margin=dict(l=10, r=10, t=40, b=10),
+                title=dict(text=f'<b>{chart_ticker}</b> — Volume Spread Analysis',
+                           font=dict(color=TEXT, size=14), x=0.01),
+                xaxis=dict(**ax, rangeslider_visible=False),
+                xaxis2=dict(**ax), xaxis3=dict(**ax),
+                yaxis=dict(**ax,  title=dict(text='Kurs',  font=dict(color=MUTED, size=10))),
+                yaxis2=dict(**ax, title=dict(text='Volum', font=dict(color=MUTED, size=10))),
+                yaxis3=dict(**ax, title=dict(text='OBV',   font=dict(color=MUTED, size=10))),
+                legend=dict(orientation='h', x=0, y=1.06,
+                            bgcolor='rgba(0,0,0,0)', font=dict(color=MUTED, size=11)),
+                hovermode='x unified',
+            )
+
+            # Unik key = tvinger ny render ved hvert ticker-bytte
+            st.plotly_chart(fig_vsa, use_container_width=True,
+                            config={'displayModeBar': True, 'scrollZoom': True},
+                            key=f"vsa__{chart_ticker}__{sektor_valg}")
+
         if not scan_df.empty and chart_ticker in scan_df['Ticker'].values:
             r = scan_df[scan_df['Ticker'] == chart_ticker].iloc[0]
             c1, c2, c3, c4 = st.columns(4)
