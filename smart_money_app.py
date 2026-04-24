@@ -406,14 +406,6 @@ def plot_sektor_heatmap(df):
         font=dict(family='monospace'),
     )
     return fig
-    
-# Definer farger for mørkt tema
-DARK = "#0d1117"
-SURFACE = "#161b22"
-BORDER = "#30363d"
-TEXT = "#c9d1d9"
-TEXT_MUTED = "#8b949e"
-ACCENT = "#388bfd"
 
 def plot_rs_boble(df):
     fase_hex = {'spring':'#3fb950','markup':'#388bfd','akkumulering_B':'#a371f7',
@@ -463,11 +455,11 @@ def plot_candlestick_vsa(ticker, dager):
 
     vol_farger = []
     for i in df.index:
-        if absorpsjon_m.get(i, False):  vol_farger.append('#3fb95099')
-        elif thrust_m.get(i, False):    vol_farger.append('#388bfd99')
-        elif shakeout_m.get(i, False):  vol_farger.append('#d2992299')
-        elif df.loc[i,'Close'] >= df.loc[i,'Open']: vol_farger.append('#3fb95044')
-        else:                           vol_farger.append('#f8514944')
+        if absorpsjon_m.get(i, False):  vol_farger.append('rgba(63,185,80,0.6)')
+        elif thrust_m.get(i, False):    vol_farger.append('rgba(56,139,253,0.6)')
+        elif shakeout_m.get(i, False):  vol_farger.append('rgba(210,153,34,0.6)')
+        elif df.loc[i,'Close'] >= df.loc[i,'Open']: vol_farger.append('rgba(63,185,80,0.26)')
+        else:                           vol_farger.append('rgba(248,81,73,0.26)')
 
     obv = ta.obv(df['Close'], df['Volume'])
 
@@ -612,20 +604,26 @@ def plot_wyckoff_syklus():
         shown.add(navn)
 
     fig.add_shape(type='line', x0=lA, x1=lC+5, y0=66, y1=66,
-                  line=dict(color='#3fb95055', width=1, dash='dot'))
+                  line=dict(color='rgba(63,185,80,0.33)', width=1, dash='dot'))
     fig.add_shape(type='line', x0=lA, x1=lC+5, y0=80, y1=80,
-                  line=dict(color='#f8514955', width=1, dash='dot'))
+                  line=dict(color='rgba(248,81,73,0.33)', width=1, dash='dot'))
 
     for a in [(lA//2,56,'SC','#6e7681'),(lA-5,83,'AR','#6e7681'),
               (lB-8,57,'ST','#a371f7'),(lB+8,51,'Spring','#3fb950'),
               (lC+8,79,'SOS','#388bfd'),(lD-5,79,'LPS','#388bfd'),
               (lE+10,168,'UTAD','#d29922'),(lDst+8,122,'SOW','#f85149')]:
         fig.add_annotation(x=a[0], y=a[1], text=f'<b>{a[2]}</b>', showarrow=False,
-                           font=dict(color=a[3], size=10), bgcolor='#0d111788')
+                           font=dict(color=a[3], size=10), bgcolor='rgba(13,17,23,0.53)')
 
-    for start, end, col in [(0,lA,'#6e767108'),(lA,lB,'#a371f708'),(lB,lC,'#3fb95008'),
-                              (lC,lD,'#388bfd08'),(lD,lE,'#388bfd0a'),
-                              (lE,lDst,'#d2992208'),(lDst,len(pris),'#f8514908')]:
+    for start, end, col in [
+        (0,    lA,       'rgba(110,118,129,0.03)'),
+        (lA,   lB,       'rgba(163,113,247,0.03)'),
+        (lB,   lC,       'rgba(63,185,80,0.03)'),
+        (lC,   lD,       'rgba(56,139,253,0.03)'),
+        (lD,   lE,       'rgba(56,139,253,0.04)'),
+        (lE,   lDst,     'rgba(210,153,34,0.03)'),
+        (lDst, len(pris),'rgba(248,81,73,0.03)'),
+    ]:
         fig.add_vrect(x0=start, x1=min(end,len(pris)-1), fillcolor=col, line_width=0)
 
     fig.update_layout(paper_bgcolor=DARK, plot_bgcolor=SURFACE, height=360,
@@ -677,13 +675,13 @@ def plot_obv_divergens():
                              name='Pris', hovertemplate='Pris: %{y:.1f}<extra></extra>'),
                   row=1, col=1)
     fig.add_shape(type='line', x0=28, x1=59, y0=pris[28], y1=pris[-1],
-                  line=dict(color='#f8514977', width=1.5, dash='dot'))
+                  line=dict(color='rgba(248,81,73,0.47)', width=1.5, dash='dot'))
     fig.add_trace(go.Scatter(x=x, y=obv, line=dict(color='#a371f7', width=2),
                              fill='tozeroy', fillcolor='rgba(163,113,247,0.07)',
                              name='OBV', hovertemplate='OBV: %{y:,.0f}<extra></extra>'),
                   row=2, col=1)
     fig.add_shape(type='line', x0=20, x1=59, y0=obv[20], y1=obv[-1],
-                  line=dict(color='#3fb95077', width=1.5, dash='dot'))
+                  line=dict(color='rgba(63,185,80,0.47)', width=1.5, dash='dot'))
     fig.add_annotation(x=52, y=pris[-1]+1.5, text='Pris svak', showarrow=False,
                        font=dict(color='#f85149', size=10))
     fig.update_layout(paper_bgcolor=DARK, plot_bgcolor=SURFACE, height=310,
